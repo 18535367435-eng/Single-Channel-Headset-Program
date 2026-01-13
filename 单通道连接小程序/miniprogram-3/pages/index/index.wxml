@@ -1,0 +1,110 @@
+<!--index.wxml-->
+<scroll-view class="scrollarea" scroll-y type="list">
+  <view class="container">
+    <view class="header">
+      <text class="title">蓝牙玩具控制器</text>
+      <text class="subtitle">控制你的智能玩具</text>
+    </view>
+
+    <view class="main-controls">
+      <button class="btn primary" bindtap="openBluetoothAdapter">初始化蓝牙</button>
+      <button class="btn primary" bindtap="autoConnectToyDevice">连接玩具</button>
+      <button class="btn danger" bindtap="disconnectDevice" wx:if="{{connectedDeviceId}}">断开连接</button>
+    </view>
+
+    <view class="bci-controls">
+      <button class="btn primary" bindtap="connectBCIDevice">连接BCI设备</button>
+      <button class="btn danger" bindtap="disconnectBCIDevice" wx:if="{{isBCIConnected}}">断开BCI连接</button>
+    </view>
+
+    <view class="status">
+      <text>{{connectionStatus}}</text>
+    </view>
+
+    <view class="connection-status">
+      <text class="connection-text {{isToyConnected ? 'connected' : 'disconnected'}}">
+        {{isToyConnected ? '已连接玩具设备' : '未连接玩具设备'}}
+      </text>
+    </view>
+
+    <view class="bci-status">
+      <text class="connection-text {{isBCIConnected ? 'connected' : 'disconnected'}}">
+        {{isBCIConnected ? '已连接BCI设备' : '未连接BCI设备'}}
+      </text>
+    </view>
+
+    <view class="eeg-section" wx:if="{{isBCIConnected}}">
+      <text class="section-title">脑电数据</text>
+      
+      <view class="filter-status">
+        <text class="filter-status-text">已启用滤波: 20-100Hz带通 + 50Hz带阻</text>
+      </view>
+      
+      <view class="eeg-current-value">
+        <text class="eeg-label">最新脑电值:</text>
+        <text class="eeg-value">{{formattedLatestEEGValue}}</text>
+      </view>
+      
+      <view class="threshold-control">
+        <view class="threshold-input-row">
+          <text class="threshold-label">阈值:</text>
+          <input class="threshold-input" type="digit" value="{{threshold}}" bindinput="onThresholdInput" placeholder="输入阈值" />
+        </view>
+        
+        <view class="auto-control-row">
+          <text class="auto-control-label">自动控制:</text>
+          <switch class="auto-control-switch" checked="{{autoControlEnabled}}" bindchange="toggleAutoControl" />
+        </view>
+        
+        <view class="control-status">
+          <text class="status-text {{autoControlEnabled ? 'enabled' : 'disabled'}}">
+            {{autoControlEnabled ? '自动控制已开启' : '自动控制已关闭'}}
+          </text>
+        </view>
+      </view>
+      
+      <scroll-view class="eeg-data-display" scroll-y="true" style="height: 200px;">
+        <text class="eeg-data-text">{{eegData || '暂无脑电数据'}}</text>
+      </scroll-view>
+    </view>
+
+
+
+    <view wx:if="{{isToyConnected}}" class="control-section">
+      <text class="section-title">控制区域</text>
+      <view class="control-buttons">
+        <view class="control-row">
+          <button class="direction-btn forward" bindtap="sendForwardCommand">启动</button>
+        </view>
+        <view class="control-row">
+          <button class="direction-btn stop" bindtap="sendStopCommand">停止</button>
+        </view>
+      </view>
+    </view>
+
+    <view class="advanced-section" wx:if="{{showAdvanced}}">
+      <text class="section-title">高级功能</text>
+      
+      <view class="device-section">
+        <text class="subsection-title">设备列表</text>
+        <button class="btn" bindtap="startBluetoothDevicesDiscovery">搜索设备</button>
+        <button class="btn" bindtap="stopBluetoothDevicesDiscovery">停止搜索</button>
+        <view class="device-list">
+          <block wx:if="{{devices.length > 0}}">
+            <view class="device-item" wx:for="{{devices}}" wx:key="deviceId" bindtap="connectDevice" data-device-id="{{item.deviceId || ''}}" data-device-name="{{item.name || ''}}">
+              <view class="device-name">
+                {{item.name || '未知设备'}}
+                <view class="toy-badge" wx:if="{{item.name && item.name === 'TOY_BLE_66666666'}}">玩具设备</view>
+              </view>
+            </view>
+          </block>
+          <view wx:else class="no-device">未发现设备</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="toggle-advanced">
+      <button class="btn link" bindtap="toggleAdvanced">{{showAdvanced ? '隐藏高级功能' : '显示高级功能'}}</button>
+    </view>
+  </view>
+</scroll-view>
