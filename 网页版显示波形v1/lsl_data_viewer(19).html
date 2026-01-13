@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LSL数据流查看器 - 直接连接Python LSL</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .control-group {
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 0 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .connection-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status-disconnected {
+            background-color: #ffdddd;
+            color: #d32f2f;
+        }
+        .status-connected {
+            background-color: #ddffdd;
+            color: #2e7d32;
+        }
+        .data-display {
+            margin-top: 20px;
+        }
+        .raw-data {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .chart-container {
+            margin-top: 20px;
+            height: 300px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .chart-container.filter-active {
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            padding: 8px;
+            background-color: #f9fff9;
+        }
+        .stream-info {
+            background-color: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .data-stats {
+            background-color: #e8f5e9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .info-item {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .info-item span:first-child {
+            font-weight: bold;
+            color: #333;
+        }
+        .info-item span:last-child {
+            color: #007bff;
+            font-family: monospace;
+        }
+        label {
+            display: inline-block;
+            margin: 0 10px;
+            font-weight: bold;
+        }
+        label input[type="checkbox"] {
+            margin-right: 5px;
+        }
+        select, input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .filter-notice {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 1000;
+            animation: fadeInOut 3s ease-in-out;
+        }
+        
+        /* 滤波器相关样式 */
+        .filter-controls {
+            background-color: #e8f4fc;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border: 1px solid #d0e3f0;
+        }
+        
+        .filter-controls label {
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-indicator {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+            padding: 5px 10px;
+            background-color: #f0f0f0;
+            border-radius: 3px;
+            transition: all 0.3s ease;
+        }
+        
+        .status-indicator.active {
+            background-color: #d4edda;
+            color: #155724;
+            font-weight: bold;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            10%, 90% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+        .instructions {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #856404;
+        }
+        .instructions ol {
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .instructions code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #e83e8c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LSL数据流查看器 - 直接连接Python LSL</h1>
+        
+        <div class="instructions">
+            <h3>使用说明</h3>
+            <ol>
+                <li>首先运行 <code>python3 lsl_to_websocket_bridge.py</code> 启动桥接服务器</li>
+                <li>确保您的Python LSL数据流发送程序正在运行</li>
+                <li>点击「连接到LSL流」按钮连接到桥接服务器</li>
+                <li>系统将自动检测并连接到可用的LSL流</li>
+                <li>在图表区域查看实时波形数据</li>
+            </ol>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                    <label for="serverUrl">LSL桥接服务器:</label>
+                    <input type="text" id="serverUrl" value="ws://localhost:8766" placeholder="WebSocket服务器URL" title="这是LSL到WebSocket的桥接服务器地址">
+                    <button id="connectBtn">连接到LSL流</button>
+                    <button id="disconnectBtn" disabled>断开连接</button>
+                </div>
+            <div class="control-group">
+                <label for="displayFormat">数据格式:</label>
+                <select id="displayFormat">
+                    <option value="compact">紧凑</option>
+                    <option value="detailed">详细</option>
+                </select>
+                <label for="maxSamples">最大样本数:</label>
+                <input type="number" id="maxSamples" value="100" min="10" max="1000">
+            </div>
+            
+            <!-- 滤波器控制 -->
+            <div class="control-group filter-controls">
+                <div style="margin-bottom: 10px;">
+                    <label>
+                        <input type="checkbox" id="enable-filter"> 启用滤波
+                    </label>
+                    <div id="filter-status" class="status-indicator">滤波未启用</div>
+                </div>
+                
+                <div style="margin-bottom: 10px;">
+                    <label for="filter-type" style="margin-right: 10px;">滤波器类型:</label>
+                    <select id="filter-type" style="width: 120px;">
+                        <option value="lowpass">低通滤波</option>
+                        <option value="highpass">高通滤波</option>
+                        <option value="bandpass">带通滤波</option>
+                    </select>
+                </div>
+                
+                <div id="low-cutoff-container" style="margin-bottom: 10px; display: none;">
+                    <label for="low-cutoff-slider" style="margin-right: 10px;">低截止频率: <span id="low-cutoff-value">0.5</span> Hz</label>
+                    <input type="range" id="low-cutoff-slider" min="0.1" max="100" step="0.1" value="0.5" style="width: 200px;">
+                </div>
+                
+                <div style="margin-bottom: 10px;">
+                    <label for="high-cutoff-slider" style="margin-right: 10px;">高截止频率: <span id="high-cutoff-value">1.0</span> Hz</label>
+                    <input type="range" id="high-cutoff-slider" min="0.1" max="100" step="0.1" value="1.0" style="width: 200px;">
+                </div>
+                
+                <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                    调整滤波器参数以优化信号处理效果
+                </div>
+            </div>
+            <div id="connectionStatus" class="connection-status status-disconnected">
+                未连接到服务器
+            </div>
+        </div>
+        
+        <div class="stream-info" id="streamInfo">
+            <h3>流信息</h3>
+            <div class="info-item">
+                <span>名称:</span> <span id="streamName">未连接</span>
+            </div>
+            <div class="info-item">
+                <span>类型:</span> <span id="streamType">未连接</span>
+            </div>
+            <div class="info-item">
+                <span>通道数:</span> <span id="channelCount">未连接</span>
+            </div>
+            <div class="info-item">
+                <span>采样率:</span> <span id="samplingRate">未连接</span>
+            </div>
+        </div>
+        
+        <div class="data-stats">
+            <h3>数据统计</h3>
+            <div class="info-item">
+                <span>接收样本数:</span> <span id="samplesCount">0</span>
+            </div>
+            <div class="info-item">
+                <span>数据速率:</span> <span id="dataRate">0</span> 样本/秒
+            </div>
+            <div class="info-item">
+                <span>连接时间:</span> <span id="connectionTime">0</span> 秒
+            </div>
+        </div>
+        
+        <div class="data-display">
+            <h3>原始数据</h3>
+            <div class="raw-data" id="rawDataDisplay"></div>
+        </div>
+        
+        <div class="chart-container" id="chart-container">
+            <canvas id="dataChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let socket = null;
+        let isConnected = false;
+        let dataChart = null;
+        let dataBuffer = [];
+        let maxDataPoints = 100;
+        let displayFormat = 'compact';
+        let streamMetadata = {
+            name: '未连接',
+            type: '未连接',
+            channelCount: '未连接',
+            samplingRate: '未连接'
+        };
+        let lastTimestamp = 0;
+        let samplesReceived = 0;
+        let startTime = 0;
+        
+        // 滤波器相关变量
+        let enableFilter = false;
+        let filterType = 'lowpass'; // 滤波器类型: 'lowpass', 'highpass', 'bandpass'
+        let lowCutoffFreq = 0.5; // 低截止频率（Hz）
+        let highCutoffFreq = 1.0; // 高截止频率（Hz）
+        let filterBuffers = []; // 存储每个通道的历史值和状态
+
+        // DOM元素
+        const serverUrlInput = document.getElementById('serverUrl');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const rawDataDisplay = document.getElementById('rawDataDisplay');
+        const displayFormatSelect = document.getElementById('displayFormat');
+        const maxSamplesInput = document.getElementById('maxSamples');
+        const streamNameSpan = document.getElementById('streamName');
+        const streamTypeSpan = document.getElementById('streamType');
+        const channelCountSpan = document.getElementById('channelCount');
+        const samplingRateSpan = document.getElementById('samplingRate');
+        const samplesCountSpan = document.getElementById('samplesCount');
+        const dataRateSpan = document.getElementById('dataRate');
+        const connectionTimeSpan = document.getElementById('connectionTime');
+        const enableFilterCheckbox = document.getElementById('enable-filter');
+        const filterTypeSelect = document.getElementById('filter-type');
+        const lowCutoffSlider = document.getElementById('low-cutoff-slider');
+        const lowCutoffValue = document.getElementById('low-cutoff-value');
+        const lowCutoffContainer = document.getElementById('low-cutoff-container');
+        const highCutoffSlider = document.getElementById('high-cutoff-slider');
+        const highCutoffValue = document.getElementById('high-cutoff-value');
+        const chartContainer = document.getElementById('chart-container');
+        
+        // 数据统计更新定时器
+        let statsUpdateInterval = null;
+
+        // 初始化图表
+        function initChart() {
+            const ctx = document.getElementById('dataChart').getContext('2d');
+            
+            // 销毁现有图表（如果存在）
+            if (dataChart) {
+                dataChart.destroy();
+            }
+            
+            // 创建新图表
+            dataChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 0 // 禁用动画以提高性能
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '时间'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '数据值'
+                            },
+                            beginAtZero: false
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'LSL数据流实时图表'
+                        }
+                    }
+                }
+            });
+        }
+
+        // 初始化滤波器缓冲区
+        function initFilterBuffers(dataLength) {
+            if (!filterBuffers || filterBuffers.length !== dataLength) {
+                filterBuffers = new Array(dataLength).fill(null).map(() => ({
+                    history: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // 10点历史数据
+                    lastOutput: null, // 使用null作为初始化标志
+                    prevInput: 0,
+                    prevOutput: 0
+                }));
+                console.log('[滤波器] 初始化缓冲区');
+            }
+        }
+        
+        // 计算平滑系数（基于截止频率和采样率）
+        function calculateSmoothingFactor(cutoffFreq, samplingRate, isLowpass) {
+            const dt = 1 / samplingRate;
+            const RC = 1 / (2 * Math.PI * cutoffFreq);
+            return isLowpass ? dt / (RC + dt) : RC / (RC + dt);
+        }
+        
+        // 低通滤波器实现
+        function applyLowpassFilter(data) {
+            if (!enableFilter) return data;
+            
+            // 初始化滤波器缓冲区
+            initFilterBuffers(data.length);
+            
+            // 获取采样率（使用默认值如果未提供）
+            const samplingRate = streamMetadata.samplingRate || 100;
+            
+            // 计算平滑系数
+            const alpha = calculateSmoothingFactor(highCutoffFreq, samplingRate, true);
+            
+            const filteredData = new Array(data.length);
+            
+            for (let i = 0; i < data.length; i++) {
+                const currentValue = data[i];
+                const buffer = filterBuffers[i];
+                
+                let filteredValue;
+                
+                if (buffer.lastOutput === null) {
+                    // 首次运行，直接使用当前值初始化
+                    filteredValue = currentValue;
+                } else {
+                    // 一阶低通滤波器
+                    // 使用标准公式：y[n] = α*x[n] + (1-α)*y[n-1]
+                    filteredValue = alpha * currentValue + (1 - alpha) * buffer.prevOutput;
+                }
+                
+                // 更新缓冲区
+                buffer.prevInput = currentValue;
+                buffer.prevOutput = filteredValue;
+                buffer.lastOutput = filteredValue;
+                
+                filteredData[i] = filteredValue;
+            }
+            
+            return filteredData;
+        }
+        
+        // 高通滤波器实现
+        function applyHighpassFilter(data) {
+            if (!enableFilter) return data;
+            
+            // 初始化滤波器缓冲区
+            initFilterBuffers(data.length);
+            
+            // 获取采样率（使用默认值如果未提供）
+            const samplingRate = streamMetadata.samplingRate || 100;
+            
+            // 计算平滑系数
+            const alpha = calculateSmoothingFactor(lowCutoffFreq, samplingRate, false);
+            
+            const filteredData = new Array(data.length);
+            
+            for (let i = 0; i < data.length; i++) {
+                const currentValue = data[i];
+                const buffer = filterBuffers[i];
+                
+                let filteredValue;
+                
+                if (buffer.lastOutput === null) {
+                    // 首次运行，直接使用当前值初始化
+                    filteredValue = currentValue;
+                } else {
+                    // 一阶高通滤波器
+                    // 使用标准公式：y[n] = α*y[n-1] + α*(x[n] - x[n-1])
+                    filteredValue = alpha * (buffer.prevOutput + currentValue - buffer.prevInput);
+                }
+                
+                // 更新缓冲区
+                buffer.prevInput = currentValue;
+                buffer.prevOutput = filteredValue;
+                buffer.lastOutput = filteredValue;
+                
+                filteredData[i] = filteredValue;
+            }
+            
+            return filteredData;
+        }
+        
+        // 带通滤波器实现
+        function applyBandpassFilter(data) {
+            if (!enableFilter) return data;
+            
+            // 初始化滤波器缓冲区
+            initFilterBuffers(data.length);
+            
+            // 获取采样率（使用默认值如果未提供）
+            const samplingRate = streamMetadata.samplingRate || 100;
+            
+            // 计算高通和低通的平滑系数
+            const highpassAlpha = calculateSmoothingFactor(lowCutoffFreq, samplingRate, false);
+            const lowpassAlpha = calculateSmoothingFactor(highCutoffFreq, samplingRate, true);
+            
+            const filteredData = new Array(data.length);
+            
+            for (let i = 0; i < data.length; i++) {
+                const currentValue = data[i];
+                const buffer = filterBuffers[i];
+                
+                let filteredValue;
+                
+                if (buffer.lastOutput === null) {
+                    // 首次运行，直接使用当前值初始化
+                    filteredValue = currentValue;
+                } else {
+                    // 先应用一阶高通滤波
+                    const highpassed = highpassAlpha * (buffer.prevOutput + currentValue - buffer.prevInput);
+                    
+                    // 然后对高通结果应用一阶低通滤波
+                    filteredValue = buffer.prevOutput + lowpassAlpha * (highpassed - buffer.prevOutput);
+                }
+                
+                // 更新缓冲区
+                buffer.prevInput = currentValue;
+                buffer.prevOutput = filteredValue;
+                buffer.lastOutput = filteredValue;
+                
+                filteredData[i] = filteredValue;
+            }
+            
+            return filteredData;
+        }
+        
+        // 根据当前滤波器类型应用相应的滤波
+        function applyFilter(data) {
+            if (!enableFilter) return data;
+            
+            switch (filterType) {
+                case 'lowpass':
+                    return applyLowpassFilter(data);
+                case 'highpass':
+                    return applyHighpassFilter(data);
+                case 'bandpass':
+                    return applyBandpassFilter(data);
+                default:
+                    return applyLowpassFilter(data);
+            }
+        }
+        
+        // 更新图表数据
+        function updateChart(newData) {
+            if (!dataChart) return;
+            
+            // 确保数据有效性
+            if (!Array.isArray(newData) || newData.length === 0) {
+                console.error('无效数据:', newData);
+                return;
+            }
+            
+            // 转换为数值数组
+            const numericData = newData.map(val => parseFloat(val)).filter(val => !isNaN(val));
+            if (numericData.length === 0) {
+                console.error('数据全为非数字');
+                return;
+            }
+            
+            // 先保存原始数据用于对比
+            const rawData = [...numericData];
+            
+            // 应用滤波器
+            let displayData = numericData;
+            if (enableFilter) {
+                displayData = applyFilter(numericData);
+                
+                // 计算并显示滤波效果统计
+                const rawStdDev = calculateStdDev(rawData);
+                const filteredStdDev = calculateStdDev(displayData);
+                const reduction = ((rawStdDev - filteredStdDev) / rawStdDev * 100).toFixed(1);
+                console.log(`[滤波统计] 标准差: 原始=${rawStdDev.toFixed(4)}, 滤波后=${filteredStdDev.toFixed(4)}, 降低=${reduction}%`);
+            }
+            
+            // 添加数据点
+            const timestamp = new Date().toLocaleTimeString();
+            dataBuffer.push({ timestamp, data: displayData });
+            
+            // 维护缓冲区大小
+            if (dataBuffer.length > maxDataPoints) {
+                dataBuffer.shift();
+            }
+            
+            // 更新图表标签
+            dataChart.data.labels = dataBuffer.map(item => item.timestamp);
+            
+            // 确保数据集存在且数量正确
+            const channelCount = displayData.length;
+            if (dataChart.data.datasets.length !== channelCount) {
+                dataChart.data.datasets = [];
+                const colors = [
+                    'rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)'
+                ];
+                
+                for (let i = 0; i < channelCount; i++) {
+                    dataChart.data.datasets.push({
+                        label: `通道 ${i+1}${enableFilter ? ' (滤波后)' : ''}`,
+                        data: [],
+                        borderColor: colors[i % colors.length],
+                        backgroundColor: 'rgba(0, 0, 0, 0)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    });
+                }
+            }
+            
+            // 更新数据集标签和数据
+            dataChart.data.datasets.forEach((dataset, i) => {
+                dataset.label = `通道 ${i+1}${enableFilter ? ' (滤波后)' : ''}`;
+                dataset.data = dataBuffer.map(point => point.data[i] || 0);
+            });
+            
+            // 强制更新图表
+            dataChart.update('default');
+        }
+        
+        // 计算标准差，用于验证滤波效果
+        function calculateStdDev(data) {
+            const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
+            const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / data.length;
+            return Math.sqrt(variance);
+        }
+
+        // 显示滤波器通知
+        function showFilterNotice(message) {
+            console.log('[通知] 显示:', message);
+            
+            // 创建通知元素
+            let notice = document.getElementById('filter-notice');
+            if (!notice) {
+                notice = document.createElement('div');
+                notice.id = 'filter-notice';
+                notice.className = 'filter-notice';
+                document.body.appendChild(notice);
+            }
+            
+            // 设置消息并显示
+            notice.textContent = message;
+            
+            // 3秒后淡出
+            setTimeout(() => {
+                notice.textContent = '';
+            }, 3000);
+        }
+
+        // 连接到WebSocket服务器
+        function connect() {
+            const serverUrl = serverUrlInput.value;
+            
+            try {
+                socket = new WebSocket(serverUrl);
+                
+                socket.onopen = function() {
+                    console.log('WebSocket连接已建立');
+                    isConnected = true;
+                    updateConnectionStatus(true);
+                    
+                    // 重置数据统计变量
+                    samplesReceived = 0;
+                    startTime = 0;
+                    lastTimestamp = 0;
+                    
+                    // 启动统计信息更新定时器
+                    if (statsUpdateInterval) {
+                        clearInterval(statsUpdateInterval);
+                    }
+                    statsUpdateInterval = setInterval(updateStats, 1000); // 每秒更新一次
+                };
+                
+                socket.onmessage = function(event) {
+                    try {
+                        // 尝试解析JSON数据
+                        const data = JSON.parse(event.data);
+                        
+                        // 处理不同类型的消息
+                        if (data.type === 'stream_info') {
+                            // 更新流信息
+                            streamMetadata = data.data;
+                            updateStreamInfo();
+                            console.log('收到流信息:', streamMetadata);
+                            
+                            // 重置并初始化图表
+                            dataBuffer = [];
+                            initChart();
+                            
+                            // 重置滤波器缓冲区
+                            filterBuffers = [];
+                        } else if (data.type === 'data') {
+                            // 处理数据流
+                            console.log('[数据] 接收到data类型消息');
+                            let sampleData = data.data;
+                            const timestamp = data.timestamp || Date.now();
+                            
+                            // 确保数据是数值数组
+                            if (Array.isArray(sampleData)) {
+                                // 转换为数值数组
+                                sampleData = sampleData.map(val => parseFloat(val));
+                                console.log('[数据] 样本值:', sampleData.slice(0, 3));
+                            } else {
+                                console.error('[数据] 非数组数据:', sampleData);
+                                return;
+                            }
+                            
+                            // 更新统计信息
+                            samplesReceived++;
+                            if (samplesReceived === 1) {
+                                startTime = timestamp;
+                            }
+                            lastTimestamp = timestamp;
+                            
+                            // 显示数据
+                            displayData(sampleData);
+                            
+                            // 更新图表
+                            console.log('[数据] 调用updateChart，滤波器状态:', enableFilter);
+                            updateChart(sampleData);
+                        } else if (data.type === 'metadata') {
+                            // 兼容旧格式的流信息
+                            streamMetadata = {
+                                name: data.name || '未知',
+                                type: data.type || '未知',
+                                channelCount: data.channelCount || '未知',
+                                samplingRate: data.samplingRate || '未知'
+                            };
+                            updateStreamInfo();
+                            
+                            // 重置并初始化图表
+                            dataBuffer = [];
+                            initChart();
+                        } else {
+                            // 处理其他类型的消息
+                            console.log('收到消息:', data);
+                            displayRawMessage(event.data);
+                        }
+                    } catch (e) {
+                        // 如果不是JSON，直接显示
+                        console.log('收到非JSON消息:', event.data);
+                        displayRawMessage(event.data);
+                    }
+                };
+                
+                socket.onclose = function() {
+                    console.log('WebSocket连接已关闭');
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                };
+                
+                socket.onerror = function(error) {
+                    console.error('WebSocket错误:', error);
+                    alert('连接错误: ' + error.message);
+                };
+            } catch (e) {
+                alert('连接失败: ' + e.message);
+            }
+        }
+
+        // 断开WebSocket连接
+        function disconnect() {
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
+            isConnected = false;
+            updateConnectionStatus(false);
+            dataBuffer = [];
+            updateChart([]);
+            
+            // 清除统计信息更新定时器
+            if (statsUpdateInterval) {
+                clearInterval(statsUpdateInterval);
+                statsUpdateInterval = null;
+            }
+            
+            // 重置数据统计变量
+            samplesReceived = 0;
+            startTime = 0;
+            lastTimestamp = 0;
+            
+            // 重置滤波器缓冲区
+            filterBuffers = [];
+            
+            // 更新统计信息显示
+            updateStats();
+            
+            // 重置滤波器状态显示
+            const statusElem = document.getElementById('filter-status');
+            if (statusElem) {
+                statusElem.textContent = '滤波未启用';
+                statusElem.classList.remove('active');
+            }
+        }
+
+        // 更新连接状态
+        function updateConnectionStatus(connected) {
+            if (connected) {
+                connectionStatus.className = 'connection-status status-connected';
+                connectionStatus.textContent = '已连接到服务器';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                connectionStatus.className = 'connection-status status-disconnected';
+                connectionStatus.textContent = '未连接到服务器';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        // 更新流信息显示
+        function updateStreamInfo() {
+            streamNameSpan.textContent = streamMetadata.name;
+            streamTypeSpan.textContent = streamMetadata.type;
+            channelCountSpan.textContent = streamMetadata.channelCount;
+            samplingRateSpan.textContent = streamMetadata.samplingRate;
+        }
+        
+        // 更新数据统计信息
+        function updateStats() {
+            if (isConnected && startTime > 0) {
+                // 更新接收样本数
+                samplesCountSpan.textContent = samplesReceived;
+                
+                // 计算连接时间
+                const currentTime = Date.now();
+                const connectionTime = Math.floor((currentTime - startTime) / 1000);
+                connectionTimeSpan.textContent = connectionTime;
+                
+                // 计算数据速率（样本/秒）
+                if (connectionTime > 0) {
+                    const rate = Math.round(samplesReceived / connectionTime * 10) / 10;
+                    dataRateSpan.textContent = rate;
+                }
+            } else {
+                // 重置统计信息
+                samplesCountSpan.textContent = 0;
+                dataRateSpan.textContent = 0;
+                connectionTimeSpan.textContent = 0;
+            }
+        }
+
+        // 显示数据
+        function displayData(data) {
+            if (displayFormat === 'compact') {
+                // 紧凑格式：显示最近的数据包
+                const formattedData = `[${new Date().toLocaleTimeString()}] ${data.slice(0, 10).join(', ')}${data.length > 10 ? '...' : ''}`;
+                rawDataDisplay.textContent = formattedData;
+            } else {
+                // 详细格式：添加到显示区域，保持最大行数
+                const formattedData = `[${new Date().toLocaleTimeString()}] ${JSON.stringify(data)}\n`;
+                rawDataDisplay.textContent = formattedData + rawDataDisplay.textContent;
+                
+                // 限制显示的行数
+                const lines = rawDataDisplay.textContent.split('\n');
+                if (lines.length > 10) {
+                    rawDataDisplay.textContent = lines.slice(0, 10).join('\n');
+                }
+            }
+        }
+
+        // 显示原始消息
+        function displayRawMessage(message) {
+            const formattedMessage = `[${new Date().toLocaleTimeString()}] ${message}\n`;
+            rawDataDisplay.textContent = formattedMessage + rawDataDisplay.textContent;
+            
+            // 限制显示的行数
+            const lines = rawDataDisplay.textContent.split('\n');
+            if (lines.length > 10) {
+                rawDataDisplay.textContent = lines.slice(0, 10).join('\n');
+            }
+        }
+
+        // 事件监听器
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        
+        // 滤波器启用/禁用事件处理
+            enableFilterCheckbox.addEventListener('change', function(event) {
+                enableFilter = event.target.checked;
+                
+                // 重置滤波器缓冲区
+                filterBuffers = [];
+                
+                // 清除当前图表数据，以便立即看到滤波效果变化
+                dataBuffer = [];
+                
+                // 更新图表容器样式
+                if (enableFilter) {
+                    chartContainer.classList.add('filter-active');
+                } else {
+                    chartContainer.classList.remove('filter-active');
+                }
+                
+                // 更新状态显示
+                const statusElem = document.getElementById('filter-status');
+                if (enableFilter) {
+                    statusElem.textContent = '滤波已启用';
+                    statusElem.classList.add('active');
+                    
+                    // 根据滤波器类型显示不同提示
+                    let noticeMessage;
+                    switch (filterType) {
+                        case 'lowpass':
+                            noticeMessage = `低通滤波器已启用 - ${highCutoffFreq}Hz以上信号将被抑制`;
+                            break;
+                        case 'highpass':
+                            noticeMessage = `高通滤波器已启用 - ${lowCutoffFreq}Hz以下信号将被抑制`;
+                            break;
+                        case 'bandpass':
+                            noticeMessage = `带通滤波器已启用 - 仅${lowCutoffFreq}-${highCutoffFreq}Hz信号将通过`;
+                            break;
+                        default:
+                            noticeMessage = `滤波器已启用 - ${highCutoffFreq}Hz以上信号将被抑制`;
+                    }
+                    showFilterNotice(noticeMessage);
+                } else {
+                    statusElem.textContent = '滤波未启用';
+                    statusElem.classList.remove('active');
+                    
+                    // 显示提示
+                    showFilterNotice('滤波器已禁用 - 显示原始数据');
+                }
+                
+                console.log('[滤波器] 状态改变:', enableFilter);
+                
+                // 触发图表更新
+                if (dataChart) {
+                    dataChart.update();
+                }
+            });
+            
+            // 滤波器类型改变事件处理
+            filterTypeSelect.addEventListener('change', function() {
+                filterType = this.value;
+                
+                // 根据滤波器类型显示或隐藏低截止频率控制
+                if (filterType === 'bandpass' || filterType === 'highpass') {
+                    lowCutoffContainer.style.display = 'block';
+                } else {
+                    lowCutoffContainer.style.display = 'none';
+                }
+                
+                // 重置滤波器缓冲区
+                filterBuffers = [];
+                
+                // 清除当前图表数据
+                dataBuffer = [];
+                
+                // 如果启用了滤波器，显示提示
+                if (enableFilter) {
+                    let noticeMessage;
+                    switch (filterType) {
+                        case 'lowpass':
+                            noticeMessage = `已切换到低通滤波器 - ${highCutoffFreq}Hz以上信号将被抑制`;
+                            break;
+                        case 'highpass':
+                            noticeMessage = `已切换到高通滤波器 - ${lowCutoffFreq}Hz以下信号将被抑制`;
+                            break;
+                        case 'bandpass':
+                            noticeMessage = `已切换到带通滤波器 - 仅${lowCutoffFreq}-${highCutoffFreq}Hz信号将通过`;
+                            break;
+                    }
+                    showFilterNotice(noticeMessage);
+                }
+                
+                console.log('[滤波器] 类型改变:', filterType);
+                
+                // 触发图表更新
+                if (dataChart) {
+                    dataChart.update();
+                }
+            });
+            
+            // 低截止频率滑块事件处理
+            lowCutoffSlider.addEventListener('input', function() {
+                lowCutoffFreq = parseFloat(this.value);
+                lowCutoffValue.textContent = lowCutoffFreq.toFixed(1);
+                
+                // 确保低截止频率小于高截止频率
+                if (lowCutoffFreq >= highCutoffFreq) {
+                    highCutoffFreq = lowCutoffFreq + 0.1;
+                    highCutoffSlider.value = highCutoffFreq;
+                    highCutoffValue.textContent = highCutoffFreq.toFixed(1);
+                }
+                
+                // 重置滤波器缓冲区
+                filterBuffers = [];
+                
+                // 如果启用了滤波器，显示提示
+                if (enableFilter) {
+                    let noticeMessage;
+                    if (filterType === 'highpass') {
+                        noticeMessage = `高通滤波器截止频率已设为 ${lowCutoffFreq.toFixed(1)}Hz`;
+                    } else if (filterType === 'bandpass') {
+                        noticeMessage = `带通滤波器频段已设为 ${lowCutoffFreq.toFixed(1)}-${highCutoffFreq.toFixed(1)}Hz`;
+                    }
+                    showFilterNotice(noticeMessage);
+                }
+            });
+            
+            // 高截止频率滑块事件处理
+            highCutoffSlider.addEventListener('input', function() {
+                highCutoffFreq = parseFloat(this.value);
+                highCutoffValue.textContent = highCutoffFreq.toFixed(1);
+                
+                // 确保高截止频率大于低截止频率
+                if (highCutoffFreq <= lowCutoffFreq) {
+                    lowCutoffFreq = highCutoffFreq - 0.1;
+                    lowCutoffSlider.value = lowCutoffFreq;
+                    lowCutoffValue.textContent = lowCutoffFreq.toFixed(1);
+                }
+                
+                // 重置滤波器缓冲区
+                filterBuffers = [];
+                
+                // 如果启用了滤波器，显示提示
+                if (enableFilter) {
+                    let noticeMessage;
+                    if (filterType === 'lowpass') {
+                        noticeMessage = `低通滤波器截止频率已设为 ${highCutoffFreq.toFixed(1)}Hz`;
+                    } else if (filterType === 'bandpass') {
+                        noticeMessage = `带通滤波器频段已设为 ${lowCutoffFreq.toFixed(1)}-${highCutoffFreq.toFixed(1)}Hz`;
+                    }
+                    showFilterNotice(noticeMessage);
+                }
+            });
+            
+            // 初始化滤波器UI
+            function initFilterUI() {
+                // 设置初始值显示
+                lowCutoffValue.textContent = lowCutoffFreq.toFixed(1);
+                highCutoffValue.textContent = highCutoffFreq.toFixed(1);
+            }
+            
+            // 初始化滤波器UI
+            initFilterUI();
+        
+        displayFormatSelect.addEventListener('change', function() {
+            displayFormat = this.value;
+        });
+        
+        maxSamplesInput.addEventListener('change', function() {
+            maxDataPoints = parseInt(this.value);
+            // 调整缓冲区大小
+            if (dataBuffer.length > maxDataPoints) {
+                dataBuffer = dataBuffer.slice(-maxDataPoints);
+            }
+            // 更新图表
+            updateChart([]);
+        });
+
+        // 初始化
+        window.addEventListener('load', function() {
+            initChart();
+        });
+
+        // 处理页面关闭
+        window.addEventListener('beforeunload', function() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.close();
+            }
+        });
+    </script>
+</body>
+</html>
