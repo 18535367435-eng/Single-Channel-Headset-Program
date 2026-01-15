@@ -1,5 +1,5 @@
 # Single-Channel-Headset-Program
- **LSL数据流查看器**
+1. **LSL数据流查看器**
    - 核心功能
      通过 `lsl_to_websocket_bridge.py` 桥接服务，实现Python LSL数据流的全流程可视化
      - 自动检测并连接可用的 LSL 数据流
